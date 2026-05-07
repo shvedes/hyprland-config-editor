@@ -1,3 +1,9 @@
+# AI Usage Disclosure
+
+I want to be transparent here. The entire project, including the test file, was written by an AI. It originated from my [passion project](https://github.com/shvedes/vibranium), where I needed a simple tool/wrapper to perform one basic task. I didn't want to invest my time in such a trivial thing. Over time, I decided to make it a separate repository in case it would be useful to others as well.
+
+I believe that any AI model was trained using publicly available code, hence the GPL licence. Hope that clarifies things!
+
 # Hyprland Config Editor
 
 A scriptable editor for brace-delimited Hyprland config files.
