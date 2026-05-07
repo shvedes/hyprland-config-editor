@@ -68,34 +68,40 @@ assert_output() {
   else fail "$desc" "$expected" "$got"; fi
 }
 
+# Produces a standard Lua config file used by most tests.
+# Section syntax:  name = {
+# Option syntax:   key = value,   (trailing comma; strings are quoted)
+# Wrapper:         hl.config({ … })
 make_conf() {
   local f
   f=$(mktemp "$WORK/conf.XXXXXX")
   cat >"$f" <<'EOF'
-general {
-    gaps_in = 5
-    gaps_out = 10
-    border_size = 2
-    layout = dwindle
-}
+hl.config({
+    general = {
+        gaps_in = 5,
+        gaps_out = 10,
+        border_size = 2,
+        layout = "dwindle",
+    },
 
-decoration {
-    rounding = 10
+    decoration = {
+        rounding = 10,
 
-    blur {
-        enabled = true
-        size = 3
-        passes = 1
-    }
-}
+        blur = {
+            enabled = true,
+            size = 3,
+            passes = 1,
+        },
+    },
 
-animations {
-    enabled = yes
-}
+    animations = {
+        enabled = true,
+    },
 
-misc {
-    force_default_wallpaper = -1
-}
+    misc = {
+        force_default_wallpaper = -1,
+    },
+})
 EOF
   echo "$f"
 }
@@ -119,9 +125,10 @@ F=$(make_conf)
 assert_contains "update deeply nested option" "passes = 4" "$F"
 assert_not_contains "old passes gone" "passes = 1" "$F"
 
+# In Lua, bare booleans are written without quotes; use "false" not "no".
 F=$(make_conf)
-"$BIN" "animations:enabled:no" "$F"
-assert_contains "update boolean value" "enabled = no" "$F"
+"$BIN" "animations:enabled:false" "$F"
+assert_contains "update boolean value" "enabled = false" "$F"
 
 # ─── WRITE: no side-effects on other keys ────────────────────────────────────
 echo ""
@@ -133,55 +140,59 @@ assert_contains "gaps_out untouched" "gaps_out = 10" "$F"
 assert_contains "border_size untouched" "border_size = 2" "$F"
 assert_contains "rounding untouched" "rounding = 10" "$F"
 assert_contains "blur:size untouched" "size = 3" "$F"
-assert_contains "animations:enabled untouched" "enabled = yes" "$F"
+# make_conf uses enabled = true (Lua boolean), not the old "yes" string.
+assert_contains "animations:enabled untouched" "enabled = true" "$F"
 
 # ─── WRITE: create new option in existing section ────────────────────────────
 echo ""
 echo "── write: add new option to existing section ───────────────────────────"
 
+# String values are written with double quotes in Lua.
 F=$(make_conf)
 "$BIN" "general:new_option:hello" "$F"
-assert_contains "new option in existing section" "new_option = hello" "$F"
+assert_contains "new option in existing section" 'new_option = "hello"' "$F"
 assert_contains "existing option still intact" "gaps_in = 5" "$F"
 
 F=$(make_conf)
 "$BIN" "decoration:blur:new_key:val" "$F"
-assert_contains "new option in existing nested section" "new_key = val" "$F"
+assert_contains "new option in existing nested section" 'new_key = "val"' "$F"
 
 # ─── WRITE: create new sections ──────────────────────────────────────────────
 echo ""
 echo "── write: create new sections ──────────────────────────────────────────"
 
+# Lua section syntax is  name = {  not  name {
 F=$(make_conf)
 "$BIN" "input:repeat_rate:25" "$F"
-assert_contains "new section created" "input {" "$F"
+assert_contains "new section created" "input = {" "$F"
 assert_contains "new section option" "repeat_rate = 25" "$F"
 
 F=$(make_conf)
 "$BIN" "input:touchpad:natural_scroll:yes" "$F"
-assert_contains "new doubly-nested section" "touchpad {" "$F"
-assert_contains "new doubly-nested option" "natural_scroll = yes" "$F"
+assert_contains "new doubly-nested section" "touchpad = {" "$F"
+assert_contains "new doubly-nested option" 'natural_scroll = "yes"' "$F"
 
 F=$(make_conf)
 "$BIN" "a:b:c:d:42" "$F"
-assert_contains "triply-nested section a" "a {" "$F"
-assert_contains "triply-nested section b" "b {" "$F"
-assert_contains "triply-nested section c" "c {" "$F"
+assert_contains "triply-nested section a" "a = {" "$F"
+assert_contains "triply-nested section b" "b = {" "$F"
+assert_contains "triply-nested section c" "c = {" "$F"
 assert_contains "triply-nested option d" "d = 42" "$F"
 
 # ─── WRITE: top-level (no section) option ────────────────────────────────────
 echo ""
 echo "── write: top-level options ────────────────────────────────────────────"
 
+# Top-level options in the Lua config are bare  key = "value",  lines.
 F=$(mktemp "$WORK/toplevel.XXXXXX")
-printf 'monitor = ,preferred,auto,1\n' >"$F"
+printf 'monitor = ",preferred,auto,1",\n' >"$F"
 "$BIN" "monitor:eDP-1" "$F"
-assert_contains "update top-level option" "monitor = eDP-1" "$F"
-assert_not_contains "old top-level value gone" "monitor = ,preferred" "$F"
+assert_contains "update top-level option" 'monitor = "eDP-1"' "$F"
+assert_not_contains "old top-level value gone" '",preferred,auto,1"' "$F"
 
 F=$(mktemp "$WORK/toplevel2.XXXXXX")
 "$BIN" "my_key:my_val" "$F"
-assert_contains "create new top-level option" "my_key = my_val" "$F"
+assert_contains "create new top-level option" 'my_key = "my_val"' "$F"
 
 # ─── WRITE: create from empty / missing file ─────────────────────────────────
 echo ""
@@ -191,7 +202,7 @@ F=$(mktemp "$WORK/empty.XXXXXX")
 "$BIN" "general:gaps_in:3" "$F"
 assert_contains "write to empty file" "gaps_in = 3" "$F"
 
-F="$WORK/nonexistent_new.conf"
+F="$WORK/nonexistent_new.lua"
 "$BIN" "general:gaps_in:7" "$F"
 assert_contains "write to non-existent file" "gaps_in = 7" "$F"
 
@@ -210,6 +221,7 @@ assert_eq "no duplicate key lines" "1" "$COUNT"
 echo ""
 echo "── write: quote stripping ──────────────────────────────────────────────"
 
+# "42" is numeric after stripping, so the program writes it bare (no quotes).
 F=$(make_conf)
 "$BIN" 'general:gaps_in:"42"' "$F"
 assert_contains "double-quoted value stripped" "gaps_in = 42" "$F"
@@ -223,17 +235,21 @@ assert_contains "single-quoted value stripped" "gaps_in = 7" "$F"
 echo ""
 echo "── write: indentation preserved ────────────────────────────────────────"
 
+# 2-space unit: hl.config at col 0, sections at 2, options at 4.
+# The update path copies the existing line's whitespace verbatim.
+# The insert path infers it from the first sibling option in the section.
 F=$(mktemp "$WORK/indent2.XXXXXX")
-printf 'general {\n  gaps_in = 5\n  gaps_out = 10\n}\n' >"$F"
+printf 'hl.config({\n  general = {\n    gaps_in = 5,\n    gaps_out = 10,\n  },\n})\n' >"$F"
 "$BIN" "general:gaps_in:99" "$F"
-assert_contains "2-space indent on update" "  gaps_in = 99" "$F"
+assert_contains "2-space indent on update" "    gaps_in = 99" "$F"
 "$BIN" "general:new_key:hello" "$F"
-assert_contains "2-space indent on new key" "  new_key = hello" "$F"
+assert_contains "2-space indent on new key" '    new_key = "hello"' "$F"
 
+# Tab unit: hl.config at col 0, sections at \t, options at \t\t.
 F=$(mktemp "$WORK/indenttab.XXXXXX")
-printf 'general {\n\tgaps_in = 5\n}\n' >"$F"
+printf 'hl.config({\n\tgeneral = {\n\t\tgaps_in = 5,\n\t},\n})\n' >"$F"
 "$BIN" "general:new_key:hello" "$F"
-assert_contains "tab indent on new key" "$(printf '\tnew_key = hello')" "$F"
+assert_contains "tab indent on new key" "$(printf '\t\tnew_key = "hello"')" "$F"
 
 # ─── WRITE: empty value rejected ─────────────────────────────────────────────
 echo ""
@@ -255,28 +271,32 @@ echo "── @occurrence selector ───────────────�
 
 F=$(mktemp "$WORK/occ.XXXXXX")
 cat >"$F" <<'EOF'
-monitor {
-    name = eDP-1
-    width = 1920
-}
+hl.config({
+    monitor = {
+        name = "eDP-1",
+        width = 1920,
+    },
 
-monitor {
-    name = HDMI-1
-    width = 1920
-}
+    monitor = {
+        name = "HDMI-1",
+        width = 1920,
+    },
 
-monitor {
-    name = DP-1
-    width = 1920
-}
+    monitor = {
+        name = "DP-1",
+        width = 1920,
+    },
+})
 EOF
 
 "$BIN" "monitor:width:3840@2" "$F"
-WIDTHS=$(grep "width" "$F" | awk -F'= ' '{print $2}' | tr -d ' \n')
+# Lua values have a trailing comma; strip it with tr -d ',' so the
+# concatenated widths match the expected bare-number string.
+WIDTHS=$(grep "width" "$F" | awk -F'= ' '{print $2}' | tr -d ' ,\n')
 assert_eq "@2 changes only second block" "192038401920" "$WIDTHS"
 
 "$BIN" "monitor:width:2560@-1" "$F"
-WIDTHS=$(grep "width" "$F" | awk -F'= ' '{print $2}' | tr -d ' \n')
+WIDTHS=$(grep "width" "$F" | awk -F'= ' '{print $2}' | tr -d ' ,\n')
 assert_eq "@-1 changes only last block" "192038402560" "$WIDTHS"
 
 # ─── READ: basic retrieval ────────────────────────────────────────────────────
@@ -285,9 +305,10 @@ echo "── read: basic retrieval ───────────────
 
 F=$(make_conf)
 
-# Single-level section option.
+# Single-level section option (numeric — stored bare, returned as-is).
 assert_output "read section option" "5" "$BIN" --get "general:gaps_in" "$F"
 assert_output "read another section option" "10" "$BIN" --get "general:gaps_out" "$F"
+# String option — stored with quotes, returned with quotes stripped.
 assert_output "read string option" "dwindle" "$BIN" --get "general:layout" "$F"
 
 # Two levels deep.
@@ -298,7 +319,7 @@ assert_output "read doubly-nested option" "true" "$BIN" --get "decoration:blur:e
 assert_output "read doubly-nested number" "3" "$BIN" --get "decoration:blur:size" "$F"
 assert_output "read doubly-nested passes" "1" "$BIN" --get "decoration:blur:passes" "$F"
 
-# Negative value as-is.
+# Negative integer — stored and returned bare.
 assert_output "read negative value" "-1" "$BIN" --get "misc:force_default_wallpaper" "$F"
 
 # ─── READ: top-level option ───────────────────────────────────────────────────
@@ -306,7 +327,8 @@ echo ""
 echo "── read: top-level option ──────────────────────────────────────────────"
 
 F=$(mktemp "$WORK/toplevel_read.XXXXXX")
-printf 'monitor = eDP-1\nsome_flag = 42\n' >"$F"
+# Lua top-level options: strings quoted, numbers bare, trailing comma.
+printf 'monitor = "eDP-1",\nsome_flag = 42,\n' >"$F"
 
 assert_output "read top-level option" "eDP-1" "$BIN" --get "monitor" "$F"
 assert_output "read top-level numeric option" "42" "$BIN" --get "some_flag" "$F"
@@ -317,11 +339,14 @@ echo "── read: value with spaces ──────────────�
 
 F=$(mktemp "$WORK/spaces.XXXXXX")
 cat >"$F" <<'EOF'
-general {
-    label = hello world
-}
+hl.config({
+    general = {
+        label = "hello world",
+    },
+})
 EOF
 
+# Quotes are stripped by the reader; the returned value has no surrounding quotes.
 assert_output "read value containing spaces" "hello world" "$BIN" --get "general:label" "$F"
 
 # ─── READ: round-trip with write ─────────────────────────────────────────────
@@ -351,19 +376,22 @@ echo "── read: @occurrence selector ─────────────�
 
 F=$(mktemp "$WORK/occ_read.XXXXXX")
 cat >"$F" <<'EOF'
-monitor {
-    name = eDP-1
-}
+hl.config({
+    monitor = {
+        name = "eDP-1",
+    },
 
-monitor {
-    name = HDMI-1
-}
+    monitor = {
+        name = "HDMI-1",
+    },
 
-monitor {
-    name = DP-1
-}
+    monitor = {
+        name = "DP-1",
+    },
+})
 EOF
 
+# Quoted string values are unquoted by the reader before output.
 assert_output "read @1 (first block)" "eDP-1" "$BIN" --get "monitor:name@1" "$F"
 assert_output "read @2 (second block)" "HDMI-1" "$BIN" --get "monitor:name@2" "$F"
 assert_output "read @3 (third block)" "DP-1" "$BIN" --get "monitor:name@3" "$F"
