@@ -274,7 +274,12 @@ fn lua_value(value: &str) -> String {
 /// Strip trailing comma and then Lua string quotes from a raw value token,
 /// returning the logical value string as the user would supply it.
 fn unquote_lua_value(raw: &str) -> String {
-    let s = raw.trim_end_matches(',').trim();
+    // The bracket-form branch in option_value only trims leading whitespace
+    // off its slice, so raw can still carry the line's trailing newline here.
+    // Trim first so trim_end_matches(',') actually sees the comma at the end
+    // instead of the newline sitting past it.
+    let s = raw.trim();
+    let s = s.trim_end_matches(',').trim();
     if s.len() >= 2
         && ((s.starts_with('"') && s.ends_with('"'))
             || (s.starts_with('\'') && s.ends_with('\'')))
